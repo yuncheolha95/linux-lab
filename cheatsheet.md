@@ -158,7 +158,40 @@ sudo firewall-cmd --list-all
 - 포트를 열어도 그 포트에서 기다리는 **서비스가 떠 있어야** 접속된다.
 - 접속이 안 될 때: `systemctl is-active 서비스` → `sudo ss -tlnp`(포트 대기 확인) → `sudo firewall-cmd --list-all`
 
-## 9. 터미널 단축키
+## 9. SSH 키 인증
+
+- **개인키**(`id_ed25519`)는 접속하는 쪽에만, **공개키**(`id_ed25519.pub`)는 서버의 `~/.ssh/authorized_keys`에 한 줄로 등록한다.
+
+| 하고 싶은 일 | 명령어 |
+|---|---|
+| 키 쌍 만들기 | `ssh-keygen -t ed25519` (질문은 Enter) |
+| 공개키 등록 (리눅스) | `ssh-copy-id 계정@서버IP` |
+| 공개키 등록 (Windows) | `scp $env:USERPROFILE\.ssh\id_ed25519.pub 계정@서버IP:~/win.pub` 후 서버에서 `cat ~/win.pub >> ~/.ssh/authorized_keys` |
+| 등록된 키 개수 확인 | `wc -l ~/.ssh/authorized_keys` |
+| 키를 안 쓰고 접속 시도 | `ssh -o PubkeyAuthentication=no 계정@서버IP` |
+| 접속 과정 자세히 보기 | `ssh -v 계정@서버IP` |
+
+| 대상 | 권한 |
+|---|---|
+| `~/.ssh` 폴더 | `700` |
+| 개인키 | `600` |
+| 공개키 | `644` |
+| `authorized_keys` | `600` |
+
+**비밀번호 로그인 끄기** (안전 절차: 스냅샷, 기존 창 유지, 새 창으로 확인)
+```bash
+echo "PasswordAuthentication no" | sudo tee /etc/ssh/sshd_config.d/10-key-only.conf
+sudo sshd -t                                     # 문법 검사 (출력 없으면 정상)
+sudo sshd -T | grep -i passwordauthentication    # 적용될 값 확인
+sudo systemctl restart sshd
+```
+되돌리기: `sudo rm /etc/ssh/sshd_config.d/10-key-only.conf` 후 `sudo systemctl restart sshd`
+
+- `sudo echo ... > 파일`은 `>`가 sudo 없이 실행돼 실패한다. `| sudo tee 파일`을 쓴다.
+- `>`는 덮어쓰기, `>>`는 덧붙이기. `authorized_keys`에는 항상 `>>`.
+- 프롬프트로 어느 머신인지 확인한다. (`PS C:\...>` = Windows, `[계정@server01 ~]$` = server01)
+
+## 10. 터미널 단축키
 
 | 키 | 동작 |
 |---|---|
@@ -174,7 +207,7 @@ sudo firewall-cmd --list-all
 - 옵션 자동완성은 `bash-completion`이 필요하다. (`rpm -q bash-completion`, 없으면 `sudo dnf install -y bash-completion` 후 재로그인)
 - 모르는 옵션은 `명령어 --help`, `man 명령어`로 확인한다.
 
-## 10. 자주 쓰는 에러 메시지
+## 11. 자주 쓰는 에러 메시지
 
 | 메시지 | 보통의 원인 |
 |---|---|
@@ -185,3 +218,7 @@ sudo firewall-cmd --list-all
 | `command not found` | 명령어 오타, 또는 파일 경로만 입력 |
 | `No such file or directory` | 경로 오타, 또는 공백 때문에 인자가 쪼개짐 (따옴표 확인) |
 | `Connection refused` | 접속하려는 포트에서 기다리는 서비스가 없음 (서비스 꺼짐) |
+| `Could not resolve hostname` | `계정@서버IP`에서 `@`를 빼먹거나 서버 주소 오타 |
+| `UNPROTECTED PRIVATE KEY FILE` | 개인키 권한이 느슨함 (`chmod 600`) |
+| 키를 등록했는데 계속 비밀번호를 물음 | 권한(`~/.ssh` 700, `authorized_keys` 600), 공개키가 한 줄인지, `/var/log/secure`의 `bad ownership` 확인 |
+| `Permission denied (publickey,...)` | 서버가 키 인증만 허용 중인데 키가 없거나 맞지 않음 |
