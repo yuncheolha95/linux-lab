@@ -13,6 +13,7 @@
 - [02. 파일과 폴더 권한](02-permissions.md)
 - [03. 서비스 관리, 로그, 방화벽](03-services-logs-firewall.md)
 - [04. SSH 키 인증과 비밀번호 로그인 차단](04-ssh-key-auth.md)
+- [05. 총복습: 사용자, 권한, 서비스, 방화벽, SSH 키](05-review.md)
 - 이후: 디스크 추가와 마운트, 웹서버(nginx), DB 설치와 백업 자동화
 
 ## 참고

@@ -28,6 +28,8 @@
 | `cat 파일` | 파일 **전체 내용** 출력 |
 | `echo 글자` | 입력한 **글자**를 출력 |
 | `echo 내용 > 파일` | 내용을 파일에 저장 (덮어쓰기), `>>`는 끝에 덧붙이기 |
+| `echo 내용 \| sudo tee 파일` | **관리자 권한이 필요한 파일**에 저장 (덮어쓰기) |
+| `echo 내용 \| sudo tee -a 파일` | 관리자 권한이 필요한 파일 끝에 덧붙이기 |
 | `grep 글자 파일` | 파일에서 글자가 든 **줄만** 출력 (`-i` 대소문자 무시, `-v` 제외) |
 | `명령어 \| grep 글자` | 명령어의 출력에서 걸러내기 |
 | `rm 파일` | 파일 삭제 (되돌릴 수 없음) |
@@ -36,6 +38,24 @@
 | `history \| tail -80` | 최근에 친 명령어 80개 |
 
 - 파일 하나 검색은 `grep 글자 파일`, 명령어 출력 검색은 `명령어 | grep 글자`.
+
+**sudo tee가 필요한 이유**
+```bash
+sudo echo "test" > /srv/proj/report.txt          # 실패 (Permission denied)
+echo "test" | sudo tee /srv/proj/report.txt      # 성공
+```
+
+| 부분 | 하는 일 |
+|---|---|
+| `echo "test"` | `test`라는 글자를 내보냄 |
+| `\|` (파이프) | 그 글자를 다음 명령으로 넘김 |
+| `sudo tee 파일` | 넘어온 글자를 **관리자 권한으로 파일에 씀** |
+
+- 첫 번째가 실패하는 이유: `sudo`는 `echo`에만 적용되고, 파일에 쓰는 `>`는 **내 쉘(일반 사용자 권한)**이 처리하기 때문.
+- 두 번째는 파일에 쓰는 쪽(`tee`)에 sudo가 붙어 있어 권한이 맞다.
+- `tee`는 받은 글자를 **파일에도 쓰고 화면에도 출력**한다 (T자처럼 두 갈래). 화면 출력이 싫으면 끝에 `> /dev/null`.
+- `sudo tee 파일` = 덮어쓰기(`>`와 같음), `sudo tee -a 파일` = 덧붙이기(`>>`와 같음). `-a`를 빼면 기존 내용이 지워진다.
+- 대안: 그 폴더에 쓸 권한이 있는 계정으로 `su - 계정` 후 `echo > 파일`.
 - `rm -r`은 경로를 한 번 더 읽고 Enter. `rm -rf`는 습관적으로 쓰지 않는다.
 
 ## 3. 따옴표 규칙
@@ -56,7 +76,8 @@
 | 비밀번호 설정 | `sudo passwd 이름` |
 | 그룹 만들기 | `sudo groupadd 그룹` |
 | 그룹에 **추가** | `sudo usermod -aG 그룹 사용자` 또는 `sudo gpasswd -a 사용자 그룹` |
-| 그룹에서 **제외** | `sudo gpasswd -d 사용자 그룹` |
+| 그룹에서 **제외** | `sudo gpasswd -d 사용자 그룹` (그룹 이름까지 써야 한다) |
+| 그룹 멤버를 한 번에 지정 | `sudo gpasswd -M alice,bob 그룹` (기존 멤버는 덮어써짐) |
 | 사용자 삭제 | `sudo userdel 이름` (계정만) / `sudo userdel -r 이름` (홈 폴더까지) |
 | 그룹 삭제 | `sudo groupdel 그룹` |
 | 소속 확인 | `id 사용자` |
@@ -92,7 +113,7 @@
 |---|---|
 | `chmod 600 파일` | 권한 변경 |
 | `sudo chown 소유자:그룹 대상` | 소유자와 그룹 변경 |
-| `sudo chown :그룹 대상` | **그룹만** 변경 (콜론 앞을 비움) |
+| `sudo chown :그룹 대상` | **그룹만** 변경 (콜론 앞을 비움). 파일 소유자가 자기가 속한 그룹으로 바꿀 때는 sudo 불필요 (`chgrp 그룹 파일`도 같음) |
 
 **권한 문제 점검 순서**: `ls -ld 폴더`(소유자/그룹/권한) → `id 사용자`(그룹 소속) → 필요하면 그룹에 추가
 
@@ -165,11 +186,30 @@ sudo firewall-cmd --list-all
 | 하고 싶은 일 | 명령어 |
 |---|---|
 | 키 쌍 만들기 | `ssh-keygen -t ed25519` (질문은 Enter) |
+| 공개키 내용 확인 (Windows) | `type $env:USERPROFILE\.ssh\id_ed25519.pub` |
+| 공개키 내용 확인 (리눅스) | `cat ~/.ssh/id_ed25519.pub` |
 | 공개키 등록 (리눅스) | `ssh-copy-id 계정@서버IP` |
 | 공개키 등록 (Windows) | `scp $env:USERPROFILE\.ssh\id_ed25519.pub 계정@서버IP:~/win.pub` 후 서버에서 `cat ~/win.pub >> ~/.ssh/authorized_keys` |
 | 등록된 키 개수 확인 | `wc -l ~/.ssh/authorized_keys` |
 | 키를 안 쓰고 접속 시도 | `ssh -o PubkeyAuthentication=no 계정@서버IP` |
 | 접속 과정 자세히 보기 | `ssh -v 계정@서버IP` |
+
+**명령어 해석: 공개키 출력 (Windows)**
+```powershell
+type $env:USERPROFILE\.ssh\id_ed25519.pub
+```
+
+| 부분 | 뜻 |
+|---|---|
+| `type` | 파일 내용을 화면에 출력 (리눅스의 `cat`과 같은 역할. PowerShell에서는 `cat`도 같은 결과) |
+| `$env:USERPROFILE` | 내 사용자 폴더 경로가 담긴 환경 변수 (예: `C:\Users\A`). 리눅스의 `~`와 비슷하며, 사용자 이름이 달라도 같은 명령이 통한다 |
+| `\.ssh\` | 키가 저장되는 폴더 |
+| `id_ed25519.pub` | 공개키 파일 (`.pub` = public) |
+
+- 풀어 쓰면 `type C:\Users\A\.ssh\id_ed25519.pub`
+- **왜 출력하나**: 공개키가 제대로 만들어졌는지(`ssh-ed25519 AAAA... 주석` 한 줄) 눈으로 확인하려고.
+- 공개키는 보여 줘도 안전하다. **개인키(`id_ed25519`)는 절대 출력해서 복사하거나 공유하지 않는다.**
+- 서버로 옮길 때는 복사·붙여넣기(줄바꿈이 끼어 키가 깨질 수 있음) 대신 `scp`를 쓴다.
 
 | 대상 | 권한 |
 |---|---|
@@ -215,7 +255,7 @@ sudo systemctl restart sshd
 | `cannot lock /etc/passwd` | 계정 명령에 `sudo`를 빼먹음 |
 | `user ... is currently used by process` | 그 사용자의 로그인 세션/프로세스가 남아 있음 (`ps -u`, `exit`) |
 | `Is a directory` | 폴더를 `rm`할 때 `-r`을 빼먹음 |
-| `command not found` | 명령어 오타, 또는 파일 경로만 입력 |
+| `command not found` | 명령어 오타, 또는 파일 경로만 입력, 또는 `sudo -tee`처럼 명령 이름 앞에 대시를 붙임 |
 | `No such file or directory` | 경로 오타, 또는 공백 때문에 인자가 쪼개짐 (따옴표 확인) |
 | `Connection refused` | 접속하려는 포트에서 기다리는 서비스가 없음 (서비스 꺼짐) |
 | `Could not resolve hostname` | `계정@서버IP`에서 `@`를 빼먹거나 서버 주소 오타 |
