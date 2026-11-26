@@ -262,3 +262,64 @@ sudo systemctl restart sshd
 | `UNPROTECTED PRIVATE KEY FILE` | 개인키 권한이 느슨함 (`chmod 600`) |
 | 키를 등록했는데 계속 비밀번호를 물음 | 권한(`~/.ssh` 700, `authorized_keys` 600), 공개키가 한 줄인지, `/var/log/secure`의 `bad ownership` 확인 |
 | `Permission denied (publickey,...)` | 서버가 키 인증만 허용 중인데 키가 없거나 맞지 않음 |
+
+## 12. 디스크 추가와 마운트
+
+**흐름**: 디스크 인식 → 파티션 → 파일시스템 → 마운트 → 영구 등록(fstab) → 테스트
+
+```
+lsblk (확인) → fdisk (파티션) → mkfs.xfs (파일시스템) → mkdir + mount (연결)
+→ blkid로 UUID 확인 → /etc/fstab 등록 → umount → mount -a (테스트) → df -h
+```
+
+| 단계 | 명령어 | 하는 일 |
+|---|---|---|
+| 0 | VMware 설정 → Add → Hard Disk (5GB, VM을 끄고) | 빈 디스크 추가 |
+| 1 | `lsblk` | 새 디스크 이름 확인 (용량으로 구분, 파티션 없음) |
+| 2 | `sudo fdisk /dev/sdb` → `n` → Enter 몇 번 → `w` | 파티션 만들기 (`w` 전에는 반영 안 됨, `q`로 취소) |
+| 3 | `sudo mkfs.xfs /dev/sdb1` | 파일시스템 만들기 (**데이터가 지워짐**) |
+| 4 | `sudo mkdir /mnt/data` → `sudo mount /dev/sdb1 /mnt/data` | 디렉터리에 연결 (재부팅하면 풀림) |
+| 4 | `df -h` | 연결과 용량 확인 |
+| 5 | `sudo blkid /dev/sdb1` | UUID 확인 |
+| 5 | `sudo cp /etc/fstab /etc/fstab.bak` | **fstab 백업 먼저** |
+| 5 | `sudo vi /etc/fstab` 맨 아래에 한 줄 추가 | 영구 등록 |
+| 6 | `sudo umount /mnt/data` → `sudo mount -a` → `df -h` | 재부팅 전 테스트 |
+
+**fstab 한 줄 (6칸)**
+```
+UUID=값   /mnt/data   xfs   defaults   0 0
+ 장치      마운트 위치  종류   옵션      백업 검사
+```
+
+**명령어 해석**
+
+| 명령 | 뜻 |
+|---|---|
+| `lsblk` / `lsblk -f` | 블록 장치 목록 / 파일시스템·UUID까지 |
+| `fdisk` | 파티션 도구. `n` 새로 만들기, `p` 미리 보기, `d` 삭제, `w` 저장, `q` 취소 |
+| `mkfs.xfs` | make filesystem. Rocky 9 기본은 xfs (ext4는 `mkfs.ext4`) |
+| `mount 장치 디렉터리` | 장치를 디렉터리에 연결 (성공하면 메시지 없음) |
+| `umount` | 연결 해제 (`unmount` 아님). `target is busy`면 그 디렉터리에서 `cd ~`로 나온다 |
+| `df -h` / `df -h 경로` | 용량 확인 / 그 경로가 어느 디스크인지 확인 |
+| `blkid` | 장치의 UUID와 종류 |
+| `mount -a` | fstab의 항목을 전부 마운트 (이미 연결된 건 건너뜀). 메시지가 없으면 정상 |
+
+**디스크 이름**: VMware 디스크 방식에 따라 다르다.
+
+| 방식 | OS 디스크 | 새 디스크 | 새 디스크의 파티션 |
+|---|---|---|---|
+| SCSI/SATA | `sda` | `sdb` | `sdb1` |
+| NVMe | `nvme0n1` (파티션 `nvme0n1p1`) | `nvme0n2` | `nvme0n2p1` (숫자 앞에 `p`) |
+
+`fdisk`는 **디스크**(`/dev/nvme0n2`), `mkfs`·`mount`·`blkid`는 **파티션**(`/dev/nvme0n2p1`)을 대상으로 한다.
+
+**기억할 점**
+- `mkfs` 전에 `lsblk`로 장치 이름을 확인한다 (`sda`는 OS 디스크). 경고가 떠도 `-f`를 습관적으로 붙이지 않는다.
+- 마운트한 디렉터리의 소유자는 root라서 일반 계정이 쓰려면 `sudo chown 계정:그룹 /mnt/data`.
+- 마운트하면 그 디렉터리의 기존 내용이 **가려진다** (삭제 아님). 빈 디렉터리에 마운트한다.
+- 마운트하지 않은 디렉터리는 상위 마운트를 따라간다 (대부분 루트 `/`). `df -h 경로`로 확인.
+- fstab을 잘못 쓰면 부팅이 멈출 수 있다: **백업 → 끝에 한 줄만 추가 → 재부팅 전에 `mount -a`로 테스트**. `tee`로 추가할 땐 `-a`를 빼먹지 않는다 (빼면 파일 전체가 덮어써짐).
+- fstab 수정 후 안내가 뜨면 `sudo systemctl daemon-reload`.
+- fstab 에러 예: `can't find UUID`(UUID 오타), `mount point does not exist`(디렉터리 없음), `wrong fs type, bad option`(종류 오타, 또는 **칸이 모자라 `defaults` 자리에 `0`이 밀려 들어감** → 줄의 칸 수를 센다).
+- fstab 줄에는 `UUID=값` 형태로 쓴다 (값만 쓰거나 `=` 앞뒤에 공백을 넣으면 안 됨). 칸 구분은 스페이스든 탭이든 상관없다.
+- `(hint) your fstab has been modified` 메시지는 에러가 아니라 안내. `sudo systemctl daemon-reload`로 해결. 영구 저장은 fstab 파일을 저장한 것으로 끝난다.
